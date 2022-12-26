@@ -4,13 +4,20 @@ from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-import pandas as pd
-
+import requests
 API_NAME = 'photoslibrary'
 API_VERSION = 'v1'
 CLIENT_SECRET_FILE = 'client_secret.json'
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary']
-
+def dup_pic(name):
+	if os.path.isfile(name):
+		i=1
+		named=name[:-4]+"_"+str(i)+name[-4:]
+		while os.path.isfile(named):
+			i+=1
+			named= name[:-4]+"_"+str(i)+name[-4:]
+		return named
+	return name
 def Create_Service(client_secret_file, api_name, api_version, *scopes):
 	print(client_secret_file, api_name, api_version, scopes, sep='-')
 	CLIENT_SECRET_FILE = client_secret_file
@@ -29,9 +36,9 @@ def Create_Service(client_secret_file, api_name, api_version, *scopes):
 			if not cred or not cred.valid:
 				if cred and cred.expired and cred.refresh_token:
 					cred.refresh(Request())
-			else:
-				flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-				cred = flow.run_local_server()
+				else:
+					flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+					cred = flow.run_local_server()
 
 		with open(pickle_file, 'wb') as token:
 			pickle.dump(cred, token)
@@ -43,7 +50,19 @@ def Create_Service(client_secret_file, api_name, api_version, *scopes):
 	except Exception as e:
 		print(e)
 		return None
-
+def downloader(name, pic_url):
+	print(f"Downloading Media Item: {name}, from url {pic_url[:69]}")
+	response = requests.get(pic_url, stream=True)
+	if not response.ok:
+		print(pic_url)
+		print(response)
+		return False
+	handle= open(str(name), 'wb')
+	for block in response.iter_content(1024):
+		if not block:
+			break
+		handle.write(block)
+	return True
 
 service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
 ##results is a dict
@@ -58,5 +77,31 @@ for album in albums:
 	myalb=service.albums().get(albumId=alb_id).execute()
 	for key,val in myalb.items():
 		print(f"{key}: {val}")
-#        break
-kk= pd.DataFrame(albums)
+	req_body = {
+			"albumId": alb_id,
+			"pageSize": 100,  # Max is 100
+			"pageToken": "",
+			}
+	mediaitems=[]
+	res= service.mediaItems().search(body= req_body).execute()
+	print("progress: ", len(res['mediaItems']))
+	mediaitems.extend(res['mediaItems'])
+	while 'nextPageToken' in res:
+		req_body['pageToken']=res['nextPageToken']
+		res= service.mediaItems().search(body= req_body).execute()
+		mediaitems.extend(res['mediaItems'])
+		print("progress: ", len(mediaitems))
+#		break
+#	print(len(mediaitems))
+#	for key, val in mediaitems[0].items():
+#		print(f"{key}: {val}")
+	for media in mediaitems:
+		pic_url= media['baseUrl']
+		name= dup_pic(media['filename'])
+		meta= media['mediaMetadata']
+		width, height= meta['width'], meta['height']
+		pic_url= pic_url+ "=w{0}-h{1}".format(width,height)
+#		print(pic_url)
+		downloader(name, pic_url)	
+#		break
+#	break
