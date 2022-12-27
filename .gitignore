@@ -131,3 +131,6 @@ dmypy.json
 # creds
 client_secret.json
 *.pickle
+
+# Makefile
+Makefile
