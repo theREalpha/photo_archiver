@@ -54,6 +54,7 @@ def Create_Service(client_secret_file, api_name, api_version, *scopes):
 	except Exception as e:
 		print(e)
 		return None
+
 def downloader(name, pic_url):
 	print(f"Downloading Media Item: {name}, from url {pic_url[:69]}...")
 	response = requests.get(pic_url, stream=True)
@@ -67,6 +68,7 @@ def downloader(name, pic_url):
 			break
 		handle.write(block)
 	return True
+
 def media_down(media, processing):
 	media_url= media['baseUrl']
 	name= dup_pic(media['filename'])
@@ -82,20 +84,20 @@ def media_down(media, processing):
 		media_url= media_url+ "=dv"	
 #		print(media_url)
 	return downloader(name, media_url)
-class ThreadR(Thread):
-    
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs={}, Verbose=None):
-        Thread.__init__(self, group, target, name, args, kwargs)
-        self._return = None
 
-    def run(self):
-        if self._target is not None:
-            self._return = self._target(*self._args,
-                                                **self._kwargs)
-    def join(self, *args):
-        Thread.join(self, *args)
-        return self._return
+class ThreadR(Thread):
+	def __init__(self, group=None, target=None, name=None,
+			args=(), kwargs={}, Verbose=None):
+		Thread.__init__(self, group, target, name, args, kwargs)
+		self._return = None
+
+	def run(self):
+		if self._target is not None:
+			self._return = self._target(*self._args,
+							**self._kwargs)
+	def join(self, *args):
+		Thread.join(self, *args)
+		return self._return
 
 def main():
 	service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
