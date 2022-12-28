@@ -98,28 +98,10 @@ class ThreadR(Thread):
 	def join(self, *args):
 		Thread.join(self, *args)
 		return self._return
-
-def main():
-	service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
-	##results is a dict
-	results = service.albums().list(pageSize=10).execute()
-	##albums is a list
-	albums= results['albums']
-	print(f"No.of Albums: {len(albums)}")
-	for i in range(len(albums)):
-		print(f"{i+1}. {albums[i]['title']} : No. of Items- {albums[i]['mediaItemsCount']}")
-	albnum=int(input("Enter Number for the album to be downloaded: "))
-	if albnum<=0:
-		print("Exiting")
-		return
-	while albnum>len(albums):
-		print("Incorrect Album Number")
-		albnum=int(input("Enter Number for the album to be downloaded: "))
-		
-	album=albums[albnum-1]
-	print()
+def album_downloader(album,service):
 	alb_id=album['id']
 	title=album['title']
+	print("\nDownloading Album: ", title) 
 	myalb=service.albums().get(albumId=alb_id).execute()
 	#for key,val in myalb.items():
 	#	print(f"{key}: {val}")
@@ -139,7 +121,7 @@ def main():
 			time.sleep(1)
 			res= service.mediaItems().search(body= req_body).execute()
 			meta=res['mediaItems'][i]
-#			print(meta)
+	#			print(meta)
 	mediaitems.extend(res['mediaItems'])
 	while 'nextPageToken' in res:
 		req_body['pageToken']=res['nextPageToken']
@@ -152,10 +134,10 @@ def main():
 				time.sleep(1)
 				res= service.mediaItems().search(body= req_body).execute()
 				meta=res['mediaItems'][i]
-#				print(meta)
+	#				print(meta)
 		mediaitems.extend(res['mediaItems'])
 		print("fetching progress: ", len(mediaitems))
-#		break
+	#		break
 
 	processing=[]
 	count=0
@@ -180,7 +162,31 @@ def main():
 			Success:\t{count}
 			Failed: \t{len(mediaitems)-count}
 			Failed due to Processing->{len(processing)}""")
-#	kk= pd.DataFrame(mediaitems)
+	#	kk= pd.DataFrame(mediaitems)
+def main():
+	service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
+	##results is a dict
+	results = service.albums().list(pageSize=10).execute()
+	##albums is a list
+	albums= results['albums']
+	print(f"No.of Albums: {len(albums)}")
+	for i in range(len(albums)):
+		print(f"{i+1}. {albums[i]['title']} : No. of Items- {albums[i]['mediaItemsCount']}")
+	print(f"{i+2}. All Albums")
+	albnum=int(input("Enter album number to be downloaded: "))
+	while albnum>len(albums)+1:
+		print("Incorrect Album Number")
+		albnum=int(input("Enter album number to be downloaded: "))
+	if albnum<=0:
+		print("Exiting")
+		return
+	elif albnum==len(albums)+1:
+		for album in albums:
+			album_downloader(album, service)
+		return
+	else:
+		album=albums[albnum-1]
+		album_downloader(album,service)
 #	kk=kk.drop(['productUrl','id'], axis=1)
 #	k2=kk[kk['mimeType']=='video/mp4']
 
