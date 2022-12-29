@@ -1,17 +1,20 @@
+## Service Imports
 import pickle
-import os
 from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-import requests
+## Auxilary Imports
+import os
 import time
+import requests
 from threading import Thread
-#import pandas as pd
+
 API_NAME = 'photoslibrary'
 API_VERSION = 'v1'
 CLIENT_SECRET_FILE = 'client_secret.json'
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary']
+
 def dup_pic(name):
 	if os.path.isfile(name):
 		i=1
@@ -37,12 +40,12 @@ def Create_Service(client_secret_file, api_name, api_version, *scopes):
 	if os.path.exists(pickle_file):
 		with open(pickle_file, 'rb') as token:
 			cred = pickle.load(token)
-			if not cred or not cred.valid:
-				if cred and cred.expired and cred.refresh_token:
-					cred.refresh(Request())
-				else:
-					flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-					cred = flow.run_local_server()
+	if not cred or not cred.valid:
+		if cred and cred.expired and cred.refresh_token:
+			cred.refresh(Request())
+		else:
+			flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+			cred = flow.run_local_server()
 
 		with open(pickle_file, 'wb') as token:
 			pickle.dump(cred, token)
@@ -98,6 +101,7 @@ class ThreadR(Thread):
 	def join(self, *args):
 		Thread.join(self, *args)
 		return self._return
+
 def album_downloader(album,service):
 	alb_id=album['id']
 	title=album['title']
@@ -162,7 +166,6 @@ def album_downloader(album,service):
 			Success:\t{count}
 			Failed: \t{len(mediaitems)-count}
 			Failed due to Processing->{len(processing)}""")
-	#	kk= pd.DataFrame(mediaitems)
 def main():
 	service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
 	##results is a dict
@@ -187,8 +190,6 @@ def main():
 	else:
 		album=albums[albnum-1]
 		album_downloader(album,service)
-#	kk=kk.drop(['productUrl','id'], axis=1)
-#	k2=kk[kk['mimeType']=='video/mp4']
 
 if __name__=='__main__':
 	main()
