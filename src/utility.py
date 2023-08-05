@@ -1,31 +1,24 @@
 import os
 import time
 import requests
-from threading import Thread
 from multiprocessing.pool import ThreadPool
+
 from src.service import Create_Service
+from src.objects import AlbumItem, MediaItem
 
-RETRY_LIMIT = 1
+RETRY_LIMIT = 3
+RETRY_WAIT = 5
 
-'''
-Extention of builtin Thread class to return value once exited.
-'''
-class ThreadR(Thread):
-    def __init__(self, group=None, target=None, name=None,
-            args=(), kwargs={}, Verbose=None):
-        Thread.__init__(self, group, target, name, args, kwargs)
-        self._return = None
+def dup_pic(name)->str:
+    '''
+    Generates a new name for a file by appending an incremental number if the file already exists.
 
-    def run(self):
-        if self._target is not None:
-            self._return = self._target(*self._args,
-                            **self._kwargs)
-    def join(self, *args):
-        Thread.join(self, *args)
-        return self._return
-    
+    Args:
+        name (str): The original name of the file.
 
-def dup_pic(name):
+    Returns:
+        str: A new name with an incremental number appended to it if necessary to avoid filename conflicts.
+    '''
     if not os.path.isfile(name):
         return name
     i=1
@@ -36,8 +29,25 @@ def dup_pic(name):
         newName= name[:-4]+"_"+str(i)+name[-4:]
     return newName
 
+def media_down(media: MediaItem)->bool:
+    '''
+    Downloads the media content specified by checking for naming conflicts and preparing download url.
 
-def downloader(name, mediaURL):
+    Args:
+        media (MediaItem): The MediaItem object representing the media to be downloaded.
+
+    Returns:
+        bool: True if the download is successful, False otherwise.
+    '''
+    mediaURL= media.baseUrl
+    name= dup_pic(media.filename)
+    meta= media.mediaMetadata
+    if media.is_photo():
+        width, height= meta['width'], meta['height']
+        mediaURL= mediaURL+ f"=w{width}-h{height}"
+    elif 'video' in meta:
+        mediaURL= mediaURL+ "=dv"
+
     print(f"Downloading Media Item: {name}, from url {mediaURL[:69]}...")
     response = requests.get(mediaURL, stream=True)
     if not response.ok:
@@ -51,101 +61,139 @@ def downloader(name, mediaURL):
         handle.write(block)
     return True
 
-def media_down(media: dict, badItems:list):
-    mediaURL= media['baseUrl']
-    name= dup_pic(media['filename'])
-    meta= media['mediaMetadata']
-    if ('video' in meta) and (meta['video']['status']=='PROCESSING'):
-        print(f"\n\n\n {media['filename']} failed at processing stage \n\n\n")
-        badItems.append(media)
-        return False    
-    if 'photo' in meta:
-        width, height= meta['width'], meta['height']
-        mediaURL= mediaURL+ "=w{0}-h{1}".format(width,height)
-    elif 'video' in meta:
-        mediaURL= mediaURL+ "=dv"    
-#        print(media_url)
-    return downloader(name, mediaURL)
-
-def download_stager(items: list, threading: bool=True, threadCount: int= os.cpu_count(), batching: bool=False) -> bool:
-        '''
-        ToDo: batching
-        '''
-        
-        processing=[]
-        count=0
-        
-        if not threading:
-            for media in items:
-                if media_down(media,processing):
-                    count+=1
-        
-        else:
-            helper = lambda item: media_down(item,processing)
-            with ThreadPool() as pool:
-                print(f"No.of threads running: {pool._max_workers-4}")
-                count+=pool.map(helper, items, chunksize= (len(items)//(pool._max_workers-4)+1)).count(True)
-            
-        print(f"""
-                Total:  \t{len(items)}
-                Success:\t{count}
-                Failed: \t{len(items)-count}
-                Failed due to Processing->{len(processing)}""")
-
-def album_retriever(service: Create_Service, album: dict, limit: int=0, pageToken: str="", includePhotos: bool= True, includeVideos: bool= True) -> list:
+def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> int:
     '''
-    Func: album_retriever
-    Input:
-        service: API service object
-        album: a dictionary item containing id, mediaCount, mediaCover etc...
-        limit: int. Default value set to albums mediaCount.
-        pageToken: str. Default value set to '' to retrieve first page of album if no pageToken is given
-    Output:
-        Returns a list of media Items.
+    Downloads media items from the provided list through media_down.
+
+    Args:
+        items (list): A list of media items to be downloaded.
+        threading (bool, optional): Set to True to use multi-threading, False to use a single thread. Default: True.
+        threadCount (int, optional): The number of threads to use when multi-threading is enabled. Default: number of CPU cores + 4.
+        batching (bool, optional): ToDo: add download through batching. Default is False.
+
+    Returns:
+        int: The number of media items successfully downloaded.
     '''
-    albumId, albumTitle = album['id'], album['title']
-    
-    print(f"\nRetrieving Album: {albumTitle} with ID: {albumId}") 
+
+    count=0
+
+    if not threading:
+        for media in items:
+            if media_down(media):
+                count+=1
+
+    else:
+        with ThreadPool(threadCount) as pool:
+            print(f"No.of threads running: {threadCount-4}")
+            count+=pool.map(media_down, items).count(True)
+
+    print(f"""
+            Total:  \t{len(items)}
+            Success:\t{count}
+            Failed: \t{len(items)-count}""")
+    return count
+
+def list_album(service: Create_Service, limit: int = 50, pagetoken: str = '') -> list[AlbumItem]:
+    '''
+    Retrieves a list of album items using the provided API service.
+
+    Args:
+        service (Create_Service): An API service object.
+        limit (int, optional): The maximum number of album items to retrieve. Default: 50.
+        pagetoken (str, optional): To retrieve items from the given pageToken and forward. Default: "".
+
+    Returns:
+        list[AlbumItem]: A list of album items.
+    '''
+
+    albumList=[]
+    pagesize=limit if limit<50 else 50
+    while True:
+        response= service.albums().list(pageSize=pagesize,pageToken=pagetoken).execute()
+        albumList.extend(map(AlbumItem,response['albums']))
+        if not response.get('nextPageToken'):
+            return albumList
+        if len(albumList)>limit: return albumList[:limit]
+        pagetoken= response.get('nextPageToken')
+
+
+def process_video(service: Create_Service, media: MediaItem)-> MediaItem:
+    '''
+    Resends a request for a media item that is stuck in processing RETRY_LIMIT times, with RETRY_LIMIT interval.
+
+    Args:
+        service (Create_Service): API service object.
+        media (MediaItem): The media item that needs to wait for processing.
+
+    Returns:
+        MediaItem: After retrying to retrieve the media, returns the processed media if it's processed,
+        otherwise, returns the original media item.
+    '''
+    metaData= media.mediaMetadata
+    retryCount= RETRY_LIMIT
+
+    while (metaData['video']['status']=='PROCESSING') and retryCount:
+        print(f"sleeping to process", media)
+        time.sleep(RETRY_WAIT)
+        response= service.mediaItems().get(mediaItemId=media.id).execute()
+        metaData= MediaItem(response).mediaMetadata
+        retryCount-=1
+    return media
+
+def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pageToken: str="", includePhotos: bool= True, includeVideos: bool= True, threading: bool=True, threadCount: int=os.cpu_count()+4):
+    '''
+    Retrieves list of media items from an album.
+
+    Args:
+        service (Create_Service): API service object.
+        album (AlbumItem): An albumItem class mainly containing id, mediaCount, mediaCover, etc.
+        limit (int, optional): Number of mediaItems to be retrieved. Default: mediaCount.
+        pageToken (str, optional): To retrieve items from a given pageToken and forward. Default: "".
+        includePhotos (bool, optional): Flag to set if photos need to be included. Default: True.
+        includeVideos (bool, optional): Flag to set if videos need to be included. Default: True.
+
+    Returns:
+        list of MediaItem: A list of mediaItems as mediaItem class.
+    '''
+
+
+    print(f"\nRetrieving", album)
 
     mediaItems=[]
-    if not limit: limit = int(album['mediaItemsCount'])
+    processingItems=[]
+    if not limit: limit = int(album.mediaItemsCount)
     pageSize = limit if limit<=100 else 100         # Max limit per page is 100
     counter=0
     while True:
         counter+=1
         req_body = {
-                "albumId": albumId,
+                "albumId": album.id,
                 "pageSize": pageSize,  
                 "pageToken": pageToken,
                 }
-        
-        response = service.mediaItems().search(body= req_body).execute()
-        response['mediaItems']=[item for item in response['mediaItems'] if (includePhotos and 'photo' in item['mediaMetadata']) or (includeVideos and 'video' in item['mediaMetadata'])]
-        retrievedNum= len(response['mediaItems'])
-        print(f"#{counter} Fetching progress: {retrievedNum}")
-        if includeVideos:
-            for i in range(retrievedNum):
-                media= response['mediaItems'][i]
-                metaData= media['mediaMetadata']
-                retryCount= RETRY_LIMIT
 
-                while metaData.get('video') and (metaData['video']['status']=='PROCESSING') and retryCount:
-                    print(f"sleeping to process {media['filename']}", i)
-                    time.sleep(1)
-                    response= service.mediaItems().search(body= req_body).execute()
-                    response['mediaItems']=[item for item in response['mediaItems'] if (includePhotos and 'photo' in item['mediaMetadata']) or (includeVideos and 'video' in item['mediaMetadata'])]
-                    meta=response['mediaItems'][i]
-                    retryCount-=1
-        
-        limit -= retrievedNum
-        print("limit: ", limit)
+        response = service.mediaItems().search(body= req_body).execute()
+        response['mediaItems'][:]= map(MediaItem, response['mediaItems'])
+        response['mediaItems']=[item for item in response['mediaItems'] if (includePhotos and item.is_photo()) or (includeVideos and item.is_video())]
+
+
+        if includeVideos:
+            processingItems=[media for media in response['mediaItems'] if media.is_video() and media.mediaMetadata['video']['status'] == 'PROCESSING']
+            retrievedItems=[media for media in response['mediaItems'] if media.is_photo() or (media.is_video() and media.mediaMetadata['video']['status']!='PROCESSING')]
+            processingItems[:]=[process_video(service,media) for media in processingItems]
+
+            retrievedItems.extend(item for item in processingItems if item.mediaMetadata['video']['status']!='PROCESSING')
+            processingItems=[item for item in processingItems if item.mediaMetadata['video']['status']=='PROCESSING']
+        processed,needProcessing=len(retrievedItems), len(processingItems)
+        limit -= processed+needProcessing
         if limit<0: 
-            mediaItems.extend(response['mediaItems'][:100+limit])
-            return mediaItems
-        print("total: ", len(mediaItems))
+            mediaItems.extend(retrievedItems[:100+limit-needProcessing])
+            return mediaItems,processingItems
         mediaItems.extend(response['mediaItems'])
-        
+        print(f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
+        print(f"Total media Retrieved: {len(mediaItems)}")
+
         if not response.get('nextPageToken'): 
-            return mediaItems
-       
+            return mediaItems,processingItems
+
         pageToken= response.get('nextPageToken','')
