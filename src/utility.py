@@ -1,6 +1,8 @@
 import os
 import time
 import requests
+import logging
+import sys
 from multiprocessing.pool import ThreadPool
 
 from src.service import Create_Service
@@ -8,6 +10,30 @@ from src.objects import AlbumItem, MediaItem
 
 RETRY_LIMIT = 3
 RETRY_WAIT = 5
+VERBOSE = False
+MODONLY= True
+modDEBUG=11
+PATH='downloads/'
+
+'''Logging related '''
+logging.addLevelName(11, 'modDEBUG')
+if VERBOSE and not MODONLY:
+    LVL=logging.DEBUG
+elif VERBOSE and MODONLY:
+    LVL=11
+elif not VERBOSE and MODONLY:
+    LVL=logging.INFO
+else:
+    LVL=logging.ERROR
+
+logging.basicConfig(stream=sys.stdout,level=LVL)
+logger=logging.getLogger('Log')
+logger.propagate=False
+
+handler = logging.StreamHandler()
+formatter = logging.Formatter('[%(levelname)s] %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 def dup_pic(name)->str:
     '''
@@ -40,21 +66,21 @@ def media_down(media: MediaItem)->bool:
         bool: True if the download is successful, False otherwise.
     '''
     mediaURL= media.baseUrl
-    name= dup_pic(media.filename)
+    path= dup_pic(PATH+media.filename)
     meta= media.mediaMetadata
     if media.is_photo():
         width, height= meta['width'], meta['height']
         mediaURL= mediaURL+ f"=w{width}-h{height}"
-    elif 'video' in meta:
+    elif media.is_video():
         mediaURL= mediaURL+ "=dv"
 
-    print(f"Downloading Media Item: {name}, from url {mediaURL[:69]}...")
     response = requests.get(mediaURL, stream=True)
+    logger.log(modDEBUG,f"Downloading Media Item: {media.filename}, size: {int(response.headers['Content-Length'])/(1024):.3f} KB")
     if not response.ok:
-        print("failed download for url\n", mediaURL)
-        print("with response",response.json())
+        logger.error(f"failed download for media {media.filename}\nid: {media.id} ")
+        logger.error(f"with response {response}")
         return False
-    handle= open(str(name), 'wb')
+    handle= open(str(path), 'wb')
     for block in response.iter_content(1024):
         if not block:
             break
@@ -84,10 +110,10 @@ def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count
 
     else:
         with ThreadPool(threadCount) as pool:
-            print(f"No.of threads running: {threadCount-4}")
+            logger.log(modDEBUG,f"No.of threads running: {threadCount-4}")
             count+=pool.map(media_down, items).count(True)
 
-    print(f"""
+    logger.info(f"""
             Total:  \t{len(items)}
             Success:\t{count}
             Failed: \t{len(items)-count}""")
@@ -133,7 +159,7 @@ def process_video(service: Create_Service, media: MediaItem)-> MediaItem:
     retryCount= RETRY_LIMIT
 
     while (metaData['video']['status']=='PROCESSING') and retryCount:
-        print(f"sleeping to process", media)
+        logger.log(modDEBUG,f"sleeping to process {media}")
         time.sleep(RETRY_WAIT)
         response= service.mediaItems().get(mediaItemId=media.id).execute()
         metaData= MediaItem(response).mediaMetadata
@@ -157,7 +183,7 @@ def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pag
     '''
 
 
-    print(f"\nRetrieving", album)
+    logger.info(f"Retrieving\n{album}")
 
     mediaItems=[]
     processingItems=[]
@@ -189,9 +215,9 @@ def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pag
         if limit<0: 
             mediaItems.extend(retrievedItems[:100+limit-needProcessing])
             return mediaItems,processingItems
-        mediaItems.extend(response['mediaItems'])
-        print(f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
-        print(f"Total media Retrieved: {len(mediaItems)}")
+        mediaItems.extend(retrievedItems)
+        logger.log(modDEBUG,f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
+        logger.log(modDEBUG,f"Total media Retrieved: {len(mediaItems)}")
 
         if not response.get('nextPageToken'): 
             return mediaItems,processingItems
