@@ -10,12 +10,13 @@ from src.objects import AlbumItem, MediaItem
 
 RETRY_LIMIT = 3
 RETRY_WAIT = 5
+
+PATH='downloads/'
+
+##logging related start
 VERBOSE = False
 MODONLY= True
 modDEBUG=11
-PATH='downloads/'
-
-'''Logging related '''
 logging.addLevelName(11, 'modDEBUG')
 if VERBOSE and not MODONLY:
     LVL=logging.DEBUG
@@ -34,6 +35,7 @@ handler = logging.StreamHandler()
 formatter = logging.Formatter('[%(levelname)s] %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+##logging related end
 
 def dup_pic(name)->str:
     '''
@@ -55,7 +57,7 @@ def dup_pic(name)->str:
         newName= name[:-4]+"_"+str(i)+name[-4:]
     return newName
 
-def media_down(media: MediaItem)->bool:
+def media_down(media: MediaItem)->int:
     '''
     Downloads the media content specified by checking for naming conflicts and preparing download url.
 
@@ -63,7 +65,7 @@ def media_down(media: MediaItem)->bool:
         media (MediaItem): The MediaItem object representing the media to be downloaded.
 
     Returns:
-        bool: True if the download is successful, False otherwise.
+        statusCode (int): returns the statusCode of request if Failed, else 0
     '''
     mediaURL= media.baseUrl
     path= dup_pic(PATH+media.filename)
@@ -74,50 +76,61 @@ def media_down(media: MediaItem)->bool:
     elif media.is_video():
         mediaURL= mediaURL+ "=dv"
 
-    response = requests.get(mediaURL, stream=True)
+    try:
+        response = requests.get(mediaURL, stream=True)
+    except Exception as e:
+        logger.error(f"Unknown error while processing request for id {media.id}. Exception:\n{e}")
+        return -1
     logger.log(modDEBUG,f"Downloading Media Item: {media.filename}, size: {int(response.headers['Content-Length'])/(1024):.3f} KB")
     if not response.ok:
         logger.error(f"failed download for media {media.filename}\nid: {media.id} ")
         logger.error(f"with response {response}")
-        return False
+        return response.status_code
     handle= open(str(path), 'wb')
     for block in response.iter_content(1024):
         if not block:
             break
         handle.write(block)
-    return True
+    return 0
 
-def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> int:
+def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> dict:
     '''
     Downloads media items from the provided list through media_down.
 
     Args:
         items (list): A list of media items to be downloaded.
         threading (bool, optional): Set to True to use multi-threading, False to use a single thread. Default: True.
-        threadCount (int, optional): The number of threads to use when multi-threading is enabled. Default: number of CPU cores + 4.
+        threadCount (int, optional): The number of threads to use when multi-threading is enabled. Default: No. of CPU cores + 4.
         batching (bool, optional): ToDo: add download through batching. Default is False.
 
     Returns:
-        int: The number of media items successfully downloaded.
+        dict: A dictionary containing the following key-value pairs:
+              - 'count' (int): The number of media items successfully downloaded.
+              - 'failed' (List[MediaItem]): A list of media items which failed.
     '''
-
-    count=0
-
+    failed=[]
     if not threading:
         for media in items:
             if media_down(media):
-                count+=1
+                failed.append(media)
 
     else:
         with ThreadPool(threadCount) as pool:
             logger.log(modDEBUG,f"No.of threads running: {threadCount-4}")
-            count+=pool.map(media_down, items).count(True)
+            statusCodes=pool.map(media_down, items)
 
+            for idx,code in enumerate(statusCodes):
+                if code:
+                    failed.append(items[idx])
+
+    total,fail=len(items),len(failed)
     logger.info(f"""
-            Total:  \t{len(items)}
-            Success:\t{count}
-            Failed: \t{len(items)-count}""")
-    return count
+            Total:  \t{total}
+            Success:\t{total-fail}
+            Failed: \t{fail}""")
+
+    return {'count':total-fail,
+            'failed': failed}
 
 def list_album(service: Create_Service, limit: int = 50, pagetoken: str = '') -> list[AlbumItem]:
     '''
@@ -166,7 +179,9 @@ def process_video(service: Create_Service, media: MediaItem)-> MediaItem:
         retryCount-=1
     return media
 
-def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pageToken: str="", includePhotos: bool= True, includeVideos: bool= True, threading: bool=True, threadCount: int=os.cpu_count()+4):
+def album_retriever(service: Create_Service, album: AlbumItem,
+                    limit: int=0, pageToken: str="",
+                    includePhotos: bool= True, includeVideos: bool= True) ->dict[str:list[MediaItem]]:
     '''
     Retrieves list of media items from an album.
 
@@ -179,7 +194,9 @@ def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pag
         includeVideos (bool, optional): Flag to set if videos need to be included. Default: True.
 
     Returns:
-        list of MediaItem: A list of mediaItems as mediaItem class.
+        dict: A dictionary containing the following key-value pairs:
+              - 'mediaItems' (List[MediaItem]): A list of retrieved media items.
+              - 'processingItems' (List[MediaItem]): A list of media items stuck in the processing stage.
     '''
 
 
@@ -214,12 +231,14 @@ def album_retriever(service: Create_Service, album: AlbumItem, limit: int=0, pag
         limit -= processed+needProcessing
         if limit<0: 
             mediaItems.extend(retrievedItems[:100+limit-needProcessing])
-            return mediaItems,processingItems
+            return {'mediaItems':mediaItems,
+                    'processingItems':processingItems}
         mediaItems.extend(retrievedItems)
         logger.log(modDEBUG,f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
         logger.log(modDEBUG,f"Total media Retrieved: {len(mediaItems)}")
 
         if not response.get('nextPageToken'): 
-            return mediaItems,processingItems
+            return {'mediaItems':mediaItems,
+                    'processingItems':processingItems}
 
         pageToken= response.get('nextPageToken','')

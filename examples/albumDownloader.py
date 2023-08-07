@@ -29,13 +29,23 @@ while albumIdx>num+1:
 
 if albumIdx==len(albums)+1:
 	for album in albums:
-		mediaList,processing=album_retriever(service,album)
-		count=downloader(mediaList,threading=True)
-		logger.info(f"{count} items retrieved sucessfully")
+		response=album_retriever(service,album)
+		mediaList,processingList=response['mediaItems'],response['processingItems']
+		response=downloader(mediaList,threading=True)
+		logger.info(f"{response['count']} items retrieved sucessfully")
+		if len(processingList):
+			logger.error(f"{len(processingList)} Items stuck in processing:\n{processingList}")
+		if len(response['failed']):
+			logger.error(f"{len(response['failed'])} Items failed:\n{response['failed']}")
 
 else:
 	album=albums[albumIdx-1]
 	logger.info(album)
-	mediaList,processing=album_retriever(service,album)
-	count=downloader(mediaList,threading=True)
-	logger.info(f"{count} items retrieved sucessfully")
+	response=album_retriever(service,album)
+	mediaList,processingList=response['mediaItems'],response['processingItems']
+	response=downloader(mediaList,threading=True)
+	logger.info(f"{response['count']} items retrieved sucessfully")
+	if len(processingList):
+		logger.error(f"{len(processingList)} Items stuck in processing:\n{processingList}")
+	if len(response['failed']):
+		logger.error(f"{len(response['failed'])} Items failed:\n{response['failed']}")
