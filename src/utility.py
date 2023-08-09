@@ -205,7 +205,7 @@ def album_retriever(service: Create_Service, album: AlbumItem,
     mediaItems=[]
     processingItems=[]
     if not limit: limit = int(album.mediaItemsCount)
-    pageSize = limit if limit<=100 else 100         # Max limit per page is 100
+    pageSize = min(limit,100)         # Max limit per page is 100
     counter=0
     while True:
         counter+=1
@@ -219,21 +219,20 @@ def album_retriever(service: Create_Service, album: AlbumItem,
         response['mediaItems'][:]= map(MediaItem, response['mediaItems'])
         response['mediaItems']=[item for item in response['mediaItems'] if (includePhotos and item.is_photo()) or (includeVideos and item.is_video())]
 
-
-        if includeVideos:
-            processingItems=[media for media in response['mediaItems'] if media.is_video() and media.mediaMetadata['video']['status'] == 'PROCESSING']
-            retrievedItems=[media for media in response['mediaItems'] if media.is_photo() or (media.is_video() and media.mediaMetadata['video']['status']!='PROCESSING')]
-            processingItems[:]=[process_video(service,media) for media in processingItems]
-
-            retrievedItems.extend(item for item in processingItems if item.mediaMetadata['video']['status']!='PROCESSING')
-            processingItems=[item for item in processingItems if item.mediaMetadata['video']['status']=='PROCESSING']
-        processed,needProcessing=len(retrievedItems), len(processingItems)
-        limit -= processed+needProcessing
-        if limit<0: 
-            mediaItems.extend(retrievedItems[:100+limit-needProcessing])
+        for media in response['mediaItems']:
+            if includeVideos and media.is_video() and media.mediaMetadata['video']['status']== 'PROCESSING':
+                media=process_video(service,media)
+                if media.mediaMetadata['video']['status']!= 'PROCESSING':
+                    mediaItems.append(media)
+                else:
+                    processingItems.append(media)
+            else:
+                mediaItems.append(media)
+        processed, needProcessing=len(mediaItems), len(processingItems)
+        if limit<processed+needProcessing:
+            mediaItems=mediaItems[:limit-needProcessing]
             return {'mediaItems':mediaItems,
                     'processingItems':processingItems}
-        mediaItems.extend(retrievedItems)
         logger.log(modDEBUG,f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
         logger.log(modDEBUG,f"Total media Retrieved: {len(mediaItems)}")
 
