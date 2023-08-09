@@ -197,6 +197,7 @@ def album_retriever(service: Create_Service, album: AlbumItem,
         dict: A dictionary containing the following key-value pairs:
               - 'mediaItems' (List[MediaItem]): A list of retrieved media items.
               - 'processingItems' (List[MediaItem]): A list of media items stuck in the processing stage.
+              - nextPageToken' (str): Token for next page when limited by 'limit'; '' if all items retrieved.
     '''
 
 
@@ -232,12 +233,72 @@ def album_retriever(service: Create_Service, album: AlbumItem,
         if limit<processed+needProcessing:
             mediaItems=mediaItems[:limit-needProcessing]
             return {'mediaItems':mediaItems,
-                    'processingItems':processingItems}
+                    'processingItems':processingItems,
+                    'nextPageToken':response.get('nextPageToken',''),
+                    }
         logger.log(modDEBUG,f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
         logger.log(modDEBUG,f"Total media Retrieved: {len(mediaItems)}")
 
         if not response.get('nextPageToken'): 
             return {'mediaItems':mediaItems,
-                    'processingItems':processingItems}
+                    'processingItems':processingItems,
+                    'nextPageToken':response.get('nextPageToken',''),
+                    }
+
+        pageToken= response.get('nextPageToken','')
+
+def media_retriever(service: Create_Service,
+                    limit: int=20000, pageToken: str="",
+                    includePhotos: bool= True, includeVideos: bool= True) ->dict[str:list[MediaItem]]:
+    '''
+    Retrieves list of media items.
+
+    Args:
+        service (Create_Service): API service object.
+        limit (int, optional): Number of mediaItems to be retrieved. Default: 25000. (~ 1/3 of daily API limit)
+        pageToken (str, optional): To retrieve items from a given pageToken and forward. Default: "".
+        includePhotos (bool, optional): Flag to set if photos need to be included. Default: True.
+        includeVideos (bool, optional): Flag to set if videos need to be included. Default: True.
+
+    Returns:
+        dict: A dictionary containing the following key-value pairs:
+              - 'mediaItems' (List[MediaItem]): A list of retrieved media items.
+              - 'processingItems' (List[MediaItem]): A list of media items stuck in the processing stage.
+              - nextPageToken' (str): Token for next page when limited by 'limit'; "" if all items retrieved.
+    '''
+    pageSize=min(limit,100)
+    mediaItems = []
+    processingItems=[]
+    counter=0
+    while True:
+        counter+=1
+        response=service.mediaItems().list(pageSize=pageSize,pageToken=pageToken).execute()
+        response['mediaItems'][:]= map(MediaItem, response['mediaItems'])
+        response['mediaItems']=[item for item in response['mediaItems'] if (includePhotos and item.is_photo()) or (includeVideos and item.is_video())]
+
+        for media in response['mediaItems']:
+            if includeVideos and media.is_video() and media.mediaMetadata['video']['status']== 'PROCESSING':
+                media=process_video(service,media)
+                if media.mediaMetadata['video']['status']!= 'PROCESSING':
+                    mediaItems.append(media)
+                else:
+                    processingItems.append(media)
+            else:
+                mediaItems.append(media)
+        processed, needProcessing=len(mediaItems), len(processingItems)
+        if limit<processed+needProcessing:
+            mediaItems=mediaItems[:limit-needProcessing]
+            return {'mediaItems':mediaItems,
+                    'processingItems':processingItems,
+                    'nextPageToken':response.get('nextPageToken',''),
+                    }
+        logger.log(modDEBUG,f"#{counter} Fetching: {processed} processed, {needProcessing} stuck in processing")
+        logger.log(modDEBUG,f"Total media Retrieved: {len(mediaItems)}")
+
+        if not response.get('nextPageToken'):
+            return {'mediaItems':mediaItems,
+                    'processingItems':processingItems,
+                    'nextPageToken':response.get('nextPageToken',''),
+                    }
 
         pageToken= response.get('nextPageToken','')
