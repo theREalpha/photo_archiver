@@ -146,7 +146,7 @@ def list_album(service: Create_Service, limit: int = 50, pagetoken: str = '') ->
     '''
 
     albumList=[]
-    pagesize=limit if limit<50 else 50
+    pagesize=min(limit,50)
     while True:
         response= service.albums().list(pageSize=pagesize,pageToken=pagetoken).execute()
         albumList.extend(map(AlbumItem,response['albums']))
@@ -248,7 +248,7 @@ def album_retriever(service: Create_Service, album: AlbumItem,
         pageToken= response.get('nextPageToken','')
 
 def media_retriever(service: Create_Service,
-                    limit: int=20000, pageToken: str="",
+                    limit: int=25000, pageToken: str="",
                     includePhotos: bool= True, includeVideos: bool= True) ->dict[str:list[MediaItem]]:
     '''
     Retrieves list of media items.
@@ -298,7 +298,7 @@ def media_retriever(service: Create_Service,
         if not response.get('nextPageToken'):
             return {'mediaItems':mediaItems,
                     'processingItems':processingItems,
-                    'nextPageToken':response.get('nextPageToken',''),
+                    'nextPageToken': '',
                     }
 
         pageToken= response.get('nextPageToken','')
