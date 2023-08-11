@@ -197,7 +197,7 @@ def album_retriever(service: Create_Service, album: AlbumItem,
         dict: A dictionary containing the following key-value pairs:
               - 'mediaItems' (List[MediaItem]): A list of retrieved media items.
               - 'processingItems' (List[MediaItem]): A list of media items stuck in the processing stage.
-              - nextPageToken' (str): Token for next page when limited by 'limit'; '' if all items retrieved.
+              - 'nextPageToken' (str): Token for next page when limited by 'limit'; '' if all items retrieved.
     '''
 
 
@@ -264,7 +264,7 @@ def media_retriever(service: Create_Service,
         dict: A dictionary containing the following key-value pairs:
               - 'mediaItems' (List[MediaItem]): A list of retrieved media items.
               - 'processingItems' (List[MediaItem]): A list of media items stuck in the processing stage.
-              - nextPageToken' (str): Token for next page when limited by 'limit'; "" if all items retrieved.
+              - 'nextPageToken' (str): Token for next page when limited by 'limit'; "" if all items retrieved.
     '''
     pageSize=min(limit,100)
     mediaItems = []
