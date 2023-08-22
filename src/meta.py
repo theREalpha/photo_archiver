@@ -1,17 +1,14 @@
-from PIL import Image
-from src.objects import MediaItem
-from src.logger import logger
-from PIL import ImageFile
+import piexif
 from datetime import datetime
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+from src.objects import MediaItem
 
-def write_metadata(media: MediaItem, path: str)->bool:
+def write_metadata(media: MediaItem, path: str) -> bool:
     '''
     Writes metadata to a media item.
 
     This function takes a MediaItem object representing media metadata and a file path,
     and writes the relevant metadata to the image file at the specified path.
-    Note: Currently only works for images, and only camera make, model is written properly
+
     Parameters:
         media (MediaItem): A MediaItem object containing metadata.
         path (str): The path to the image file where metadata will be written.
@@ -20,31 +17,33 @@ def write_metadata(media: MediaItem, path: str)->bool:
         bool: True if metadata is successfully written, False otherwise.
     '''
 
-    meta=media.mediaMetadata
-    exif=Image.Exif()
-    time_obj = datetime.strptime(meta['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
-    delta = datetime.datetime.now()- datetime.datetime.utcnow()
-    time_obj = time_obj + delta
-    formatted_time = time_obj.strftime("%Y:%m:%d %H:%M:%S")
+    meta = media.mediaMetadata
+    exif_dict = {"0th": {}, "Exif": {}}
 
-    exif[256]= int(meta['width'])
-    exif[257]= int(meta['height'])
-    exif[306]= formatted_time
+    exif_dict["0th"][piexif.ImageIFD.ImageWidth] = int(meta['width'])
+    exif_dict["0th"][piexif.ImageIFD.ImageLength] = int(meta['height'])
+
+    creation_time = datetime.strptime(meta['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
+    delta = datetime.now() - datetime.utcnow()
+    adjusted_creation_time = creation_time + delta
+    exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = adjusted_creation_time.strftime("%Y:%m:%d %H:%M:%S")
 
     if media.is_photo():
-        meta=meta['photo']
-        exif[271]= meta.get('cameraMake','')
-        exif[272]= meta.get('cameraModel','')
-        if 'exposureTime' in meta: exif[33434]= float(meta['exposureTime'][:-1])
-        if 'isoEquivalent' in meta: exif[34855] = int(meta['isoEquivalent'])
-        if 'apertureFNumber' in meta: exif[37378] = int(meta['apertureFNumber'])
-        if 'focalLength' in meta: exif[37386] = int(meta['focalLength'])
+        meta = meta['photo']
+        exif_dict["0th"][piexif.ImageIFD.Make] = meta.get('cameraMake', '').encode('utf-8')
+        exif_dict["0th"][piexif.ImageIFD.Model] = meta.get('cameraModel', '').encode('utf-8')
+        if 'exposureTime' in meta:
+            exif_dict["Exif"][piexif.ExifIFD.ExposureTime] = (int(float(meta['exposureTime'][:-1])*1000000), 1000000)
+        if 'isoEquivalent' in meta:
+            exif_dict["Exif"][piexif.ExifIFD.ISOSpeedRatings] = [int(meta['isoEquivalent'])]
+        if 'apertureFNumber' in meta:
+            exif_dict["Exif"][piexif.ExifIFD.FNumber] = (int(float(meta['apertureFNumber'])*1000), 1000)
+        if 'focalLength' in meta:
+            exif_dict["Exif"][piexif.ExifIFD.FocalLength] = (int(float(meta['focalLength'])*1000), 1000)
     else:
-        exif[51044]= float(meta['video']['fps'])
-    try:
-        handle=Image.open(path)
-    except:
-        logger.error(f"Cannot write metadata for the file:{media.filename}")
-        return False
-    handle.save(path,exif=exif)
+        exif_dict["Exif"][piexif.ExifIFD.ExposureTime] = (1, int(meta['video']['fps']))
+
+    exif_bytes = piexif.dump(exif_dict)
+    piexif.insert(exif_bytes, path)
+
     return True
