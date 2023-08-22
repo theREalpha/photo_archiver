@@ -1,41 +1,16 @@
 import os
 import time
 import requests
-import logging
-import sys
 from multiprocessing.pool import ThreadPool
 
 from src.service import Create_Service
 from src.objects import AlbumItem, MediaItem
-
+from src.meta import write_metadata
+from src.logger import logger, modDEBUG
 RETRY_LIMIT = 3
 RETRY_WAIT = 5
 
 PATH='downloads/'
-
-##logging related start
-VERBOSE = False
-MODONLY= True
-modDEBUG=11
-logging.addLevelName(11, 'modDEBUG')
-if VERBOSE and not MODONLY:
-    LVL=logging.DEBUG
-elif VERBOSE and MODONLY:
-    LVL=11
-elif not VERBOSE and MODONLY:
-    LVL=logging.INFO
-else:
-    LVL=logging.ERROR
-
-logging.basicConfig(stream=sys.stdout,level=LVL)
-logger=logging.getLogger('Log')
-logger.propagate=False
-
-handler = logging.StreamHandler()
-formatter = logging.Formatter('[%(levelname)s] %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-##logging related end
 
 def dup_pic(name)->str:
     '''
@@ -89,8 +64,10 @@ def media_down(media: MediaItem)->int:
     handle= open(str(path), 'wb')
     for block in response.iter_content(1024):
         if not block:
+            handle.close()
             break
         handle.write(block)
+    write_metadata(media,path)
     return 0
 
 def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> dict:
