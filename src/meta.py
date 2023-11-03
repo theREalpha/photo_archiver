@@ -23,7 +23,7 @@ def write_metadata(media: MediaItem, path: str)->bool:
     meta=media.mediaMetadata
     exif=Image.Exif()
     time_obj = datetime.strptime(meta['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
-    delta = datetime.datetime.now()- datetime.datetime.utcnow()
+    delta = datetime.now()- datetime.utcnow()
     time_obj = time_obj + delta
     formatted_time = time_obj.strftime("%Y:%m:%d %H:%M:%S")
 
