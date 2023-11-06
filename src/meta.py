@@ -49,6 +49,9 @@ def write_metadata(media: MediaItem, path: str) -> bool:
         exif_dict["Exif"][piexif.ExifIFD.FocalLength] = (int(float(meta['focalLength'])*1000), 1000)
 
     exif_bytes = piexif.dump(exif_dict)
-    piexif.insert(exif_bytes, path)
-
+    try:
+        piexif.insert(exif_bytes, path)
+    except:
+        logger.error(f"Failed writing metadata for {media.filename}")
+        return False
     return True

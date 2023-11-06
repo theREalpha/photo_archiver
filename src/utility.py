@@ -9,10 +9,11 @@ from src.meta import write_metadata
 from src.logger import logger, modDEBUG
 RETRY_LIMIT = 3
 RETRY_WAIT = 5
+INCLUDE_METADATA = True
 
 PATH='downloads/'
 
-def dup_pic(name)->str:
+def dup_pic(name: str)->str:
     '''
     Generates a new name for a file by appending an incremental number if the file already exists.
 
@@ -67,7 +68,7 @@ def media_down(media: MediaItem)->int:
             handle.close()
             break
         handle.write(block)
-    write_metadata(media,path)
+    if INCLUDE_METADATA: write_metadata(media,path)
     return 0
 
 def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> dict:
