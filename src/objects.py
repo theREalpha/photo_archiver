@@ -24,7 +24,7 @@ class AlbumItem:
         return f"albumTitle: {self.title}, mediaCount: {self.mediaItemsCount}, id: {self.id}"
     
 class MediaItem:
-    __slots__ = ['id', 'productUrl', 'baseUrl', 'mimeType', 'mediaMetadata', 'filename', 'mediaType']
+    __slots__ = ['id', 'productUrl', 'baseUrl', 'mimeType', 'mediaMetadata', 'filename', 'extension', 'mediaType']
     def __init__(self,media: dict) -> None:
         self.id:str = media['id']
         self.productUrl:str = media['productUrl']
@@ -32,6 +32,7 @@ class MediaItem:
         self.mimeType:str = media['mimeType']
         self.mediaMetadata:dict = media['mediaMetadata']
         self.filename:str = media['filename']
+        self.extension:str= self.filename[self.filename.rfind('.')+1:].lower()
         self.mediaType:str = 'photo' if self.mimeType.startswith('image') else 'video'
 
     def __toJSON__(self) -> dict:
