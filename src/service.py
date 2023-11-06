@@ -48,7 +48,7 @@ def create_creds(CLIENT_SECRET_FILE, SCOPES):
 		last_uri= None
 
 	# HTTPS server using self-signed certs running on a seperate thread
-	server =CustomHTTPServer(('localhost', port), CustomHandler)
+	server =CustomHTTPServer(('0.0.0.0', port), CustomHandler)
 	server.socket = ssl.wrap_socket(server.socket, keyfile='certs/key.pem', certfile="certs/cert.pem", server_side=True)
 	server_thread= threading.Thread(target=server.serve_forever)
 	try:

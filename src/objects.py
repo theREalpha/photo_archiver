@@ -1,7 +1,7 @@
 class AlbumItem:
     def __init__(self, albumData:dict) -> None:
         self.id:str = albumData['id']
-        self.title:str = albumData['title']
+        self.title:str = albumData.get('title',"Untitled Album")
         self.productUrl:str = albumData['productUrl']
         self.mediaItemsCount:int = int(albumData['mediaItemsCount'])
         self.coverPhotoBaseUrl:str = albumData['coverPhotoBaseUrl']
