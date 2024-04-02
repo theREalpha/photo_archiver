@@ -1,11 +1,14 @@
 from src.service import Create_Service
 from src.utility import logger,album_retriever,list_album,downloader
-
+from config import *
 API_NAME = 'photoslibrary'
 API_VERSION = 'v1'
-CLIENT_SECRET_FILE = 'client_secret.json'
+if OVER_AIR:
+	CLIENT_SECRET_FILE = 'client_secret_oa.json'
+else:
+	CLIENT_SECRET_FILE = 'client_secret_local.json'
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary']
-service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
+service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, OVER_AIR, SCOPES)
 
 albums= list_album(service)
 logger.info(f"No.of Albums: {len(albums)}")
@@ -29,9 +32,9 @@ while albumIdx>num+1:
 
 if albumIdx==len(albums)+1:
 	for album in albums:
-		response=album_retriever(service,album)
+		response=album_retriever(service, album, inclduePhotos=INCLUDE_PHOTOS, includeVideos=INCLUDE_VIDEOS)
 		mediaList,processingList=response['mediaItems'],response['processingItems']
-		response=downloader(mediaList,threading=True)
+		response=downloader(mediaList,threading=THREADING)
 		logger.info(f"{response['count']} items retrieved sucessfully")
 		if len(processingList):
 			logger.error(f"{len(processingList)} Items stuck in processing:\n{processingList}")
@@ -41,9 +44,9 @@ if albumIdx==len(albums)+1:
 else:
 	album=albums[albumIdx-1]
 	logger.info(album)
-	response=album_retriever(service,album)
+	response=album_retriever(service, album, includePhotos=INCLUDE_PHOTOS, includeVideos=INCLUDE_VIDEOS)
 	mediaList,processingList=response['mediaItems'],response['processingItems']
-	response=downloader(mediaList,threading=True)
+	response=downloader(mediaList,threading=THREADING)
 	logger.info(f"{response['count']} items retrieved sucessfully")
 	if len(processingList):
 		logger.error(f"{len(processingList)} Items stuck in processing:\n{processingList}")

@@ -1,7 +1,6 @@
 import logging
 import sys
-VERBOSE = False
-MODONLY= True
+from config import VERBOSE, MODONLY
 modDEBUG=11
 logging.addLevelName(11, 'modDEBUG')
 

@@ -13,13 +13,9 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 
 from src.logger import logger
-
-def create_creds(CLIENT_SECRET_FILE, SCOPES):
-	host="therealpha.ddns.net"
-	port=62511
-	redirect_uri=f"https://{host}:{port}/"
-
-	# Create authorization url using Google's oauth App Flow
+from config import ENABLE_GALLERY
+def flow_oa(CLIENT_SECRET_FILE,SCOPES, redirect_uri, port):
+# Create authorization url using Google's oauth App Flow
 	flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
 	flow.redirect_uri=redirect_uri
 	auth_url, _ =flow.authorization_url()
@@ -27,29 +23,46 @@ def create_creds(CLIENT_SECRET_FILE, SCOPES):
 	# Custom Server to handle GET requests, store last_uri for creating cred tokens
 	class CustomHandler(SimpleHTTPRequestHandler):
 		def do_GET(self):
-			global LAST_URI
-			self.send_response(200)
-			self.send_header('Content-type','text/html')
-			self.end_headers()
+			if self.path=='/login':
+				self.send_response(302)
+				self.send_header('location',auth_url)
+				self.end_headers()
 
-			if self.path=='/':
-				self.wfile.write(f"""<html>
-					 <body> Click <a href={auth_url}>here</a> to login into the account and start the process</body>
-					   </html>""".encode())
-
-			elif self.path.startswith("/?state="):
+			elif self.path.startswith("/login/auth"):
+				self.send_response(200)
+				self.send_header('Content-type','text/html')
+				self.end_headers()
 				self.server.last_uri= f"https://127.0.0.1:{port}"+self.path
-				self.wfile.write(f"You can close this window".encode())
-
+				if ENABLE_GALLERY:
+					htt= f"""<html>
+		<head>
+			<meta http-equiv="refresh" content="3;url=https://therealpha.ddns.net:{port-1}/gallery" />
+		</head>
+		<body>
+			<h1>Redirecting in 3 seconds...</h1>
+		</body>
+	</html>"""
+					## port-1 is the Landing Page port
+				else: htt=f"""<html><body>return to terminal</body></html>"""
+				self.wfile.write(htt.encode())
+			elif self.path.endswith(".ico"):
+				self.send_response(200)
+				self.end_headers()
+				self.wfile.write(b" ")
 			else:
-				pass
+				self.send_response(301)
+				self.send_header('location', f'https://therealpha.ddns.net:{port-1}')
+				self.end_headers()
 
 	class CustomHTTPServer(HTTPServer):
 		last_uri= None
 
 	# HTTPS server using self-signed certs running on a seperate thread
 	server =CustomHTTPServer(('0.0.0.0', port), CustomHandler)
-	server.socket = ssl.wrap_socket(server.socket, keyfile='certs/key.pem', certfile="certs/cert.pem", server_side=True)
+	ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+	ctx.load_cert_chain(keyfile='web/certs/key.pem', certfile="web/certs/cert.pem")
+	server.socket = ctx.wrap_socket(server.socket,server_side=True)
+	# server.socket = ssl.wrap_socket(server.socket, keyfile='web/certs/key.pem', certfile="web/certs/cert.pem", server_side=True)
 	server_thread= threading.Thread(target=server.serve_forever)
 	try:
 		server_thread.start()
@@ -57,7 +70,7 @@ def create_creds(CLIENT_SECRET_FILE, SCOPES):
 		logger.error(f"Failed to start server thread due to an exception")
 		logger.error(f"{e.with_traceback()}")
 		return None
-	webbrowser.open(f"https://127.0.0.1:{port}", 1, True)
+	# webbrowser.open(f"https://127.0.0.1:{port}/login", 1, True)
 	# Polls every 3s to check if last_uri is set and then shutdowns the server and thread
 	while True:
 		sleep(3)
@@ -71,9 +84,20 @@ def create_creds(CLIENT_SECRET_FILE, SCOPES):
 			break
 
 	flow.fetch_token(authorization_response=server.last_uri)
+	return flow
+
+def create_creds(CLIENT_SECRET_FILE, SCOPES, over_air= True):
+	port=62512
+	if over_air:
+		host="therealpha.ddns.net"
+		redirect_uri=f"https://{host}:{port}/login/auth/"
+		flow= flow_oa(CLIENT_SECRET_FILE, SCOPES, redirect_uri,port)
+		return flow.credentials
+	flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+	flow.run_local_server(port=port)
 	return flow.credentials
 
-def Create_Service(client_secret_file, api_name, api_version, *scopes):
+def Create_Service(client_secret_file, api_name, api_version, over_air=True, *scopes):
 	print(client_secret_file, api_name, api_version, scopes, sep='-')
 	CLIENT_SECRET_FILE = client_secret_file
 	API_SERVICE_NAME = api_name
@@ -91,7 +115,8 @@ def Create_Service(client_secret_file, api_name, api_version, *scopes):
 		if cred and cred.expired and cred.refresh_token:
 			cred.refresh(Request())
 		else:
-			cred=create_creds(CLIENT_SECRET_FILE,SCOPES)
+			logger.info("Create new creds")
+			cred=create_creds(CLIENT_SECRET_FILE,SCOPES, over_air)
 		with open(pickle_file, 'wb') as token:
 			pickle.dump(cred, token)
 

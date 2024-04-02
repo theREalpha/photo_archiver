@@ -7,11 +7,7 @@ from src.service import Create_Service
 from src.objects import AlbumItem, MediaItem
 from src.meta import write_metadata
 from src.logger import logger, modDEBUG
-RETRY_LIMIT = 3
-RETRY_WAIT = 5
-INCLUDE_METADATA = True
-
-PATH='downloads/'
+from config import RETRY_LIMIT, RETRY_WAIT, PATH
 
 def dup_pic(name: str)->str:
     '''
@@ -45,19 +41,13 @@ def media_down(media: MediaItem)->int:
     '''
     mediaURL= media.baseUrl
     path= dup_pic(PATH+media.filename)
-    meta= media.mediaMetadata
-    if media.is_photo():
-        width, height= meta['width'], meta['height']
-        mediaURL= mediaURL+ f"=w{width}-h{height}"
-    elif media.is_video():
-        mediaURL= mediaURL+ "=dv"
-
+    mediaURL = media.downloadURL
     try:
         response = requests.get(mediaURL, stream=True)
     except Exception as e:
         logger.error(f"Unknown error while processing request for id {media.id}. Exception:\n{e}")
         return -1
-    logger.log(modDEBUG,f"Downloading Media Item: {media.filename}, size: {int(response.headers['Content-Length'])/(1024):.3f} KB")
+    logger.log(modDEBUG,f"Downloading Media Item: {media.filename}, size: {int(response.headers.get('Content-Length',0))/(1024):.3f} KB")
     if not response.ok:
         logger.error(f"failed download for media {media.filename}\nid: {media.id} ")
         logger.error(f"with response {response}")
@@ -68,7 +58,6 @@ def media_down(media: MediaItem)->int:
             handle.close()
             break
         handle.write(block)
-    if INCLUDE_METADATA: write_metadata(media,path)
     return 0
 
 def downloader(items: list, threading: bool=True, threadCount: int= os.cpu_count()+4, batching: bool=False) -> dict:
@@ -159,7 +148,7 @@ def process_video(service: Create_Service, media: MediaItem)-> MediaItem:
 
 def album_retriever(service: Create_Service, album: AlbumItem,
                     limit: int=0, pageToken: str="",
-                    includePhotos: bool= True, includeVideos: bool= True) ->dict[str:list[MediaItem]]:
+                    includePhotos: bool= True, includeVideos: bool= True) ->dict:
     '''
     Retrieves list of media items from an album.
 
@@ -227,7 +216,7 @@ def album_retriever(service: Create_Service, album: AlbumItem,
 
 def media_retriever(service: Create_Service,
                     limit: int=25000, pageToken: str="",
-                    includePhotos: bool= True, includeVideos: bool= True) ->dict[str:list[MediaItem]]:
+                    includePhotos: bool= True, includeVideos: bool= True) ->dict:
     '''
     Retrieves list of media items.
 
